@@ -1,0 +1,6 @@
+running day  26
+Killed
+./vaia.sh: 42: ./vaia.sh: 137: not found
+ real-0 OK
+./vaia.sh: 58: ./vaia.sh: 0: not found
+ convert OK

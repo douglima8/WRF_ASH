@@ -1,0 +1,5 @@
+running day  22
+./calbuco_2015.sh: 42: ./calbuco_2015.sh: 0: Permission denied
+ real-0 OK
+./calbuco_2015.sh: 58: ./calbuco_2015.sh: 0: Permission denied
+ convert OK

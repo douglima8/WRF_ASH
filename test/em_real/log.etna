@@ -1,0 +1,5 @@
+running day  22
+./etna_nov2013.sh: 42: ./etna_nov2013.sh: 0: not found
+ real-0 OK
+./etna_nov2013.sh: 59: ./etna_nov2013.sh: 0: not found
+ convert OK

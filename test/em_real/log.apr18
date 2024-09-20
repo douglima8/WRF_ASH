@@ -1,0 +1,5 @@
+running day  10
+./apr2018_10km.sh: 42: ./apr2018_10km.sh: 0: not found
+ real-0 OK
+./apr2018_10km.sh: 58: ./apr2018_10km.sh: 0: not found
+ convert OK

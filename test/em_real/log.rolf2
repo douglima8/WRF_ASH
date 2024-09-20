@@ -1,0 +1,5 @@
+running day  05
+./rolf2.sh: 42: ./rolf2.sh: 0: not found
+ real-0 OK
+./rolf2.sh: 58: ./rolf2.sh: 0: not found
+ convert OK

@@ -1,0 +1,808 @@
+! -----------------------------------------------------------------------------------
+! modified urix 
+! 1) jan/feb 2017 to include wave data from Nettuno/WAM
+! 2) may 2017 SWAN coupling
+! 3) Dec 2017 - ZNT feedbacks
+! 4) wave state in netCDF input system (dec 2018)
+! ----------------------------------------------------------------------------------
+MODULE GOCART_SEASALT
+
+CONTAINS
+  subroutine gocart_seasalt_driver(ktau,dt,config_flags,julday,alt,ust,   &
+         t_phy,moist,u_phy,v_phy,chem,rho_phy,dz8w,u10,v10,p8w,z_at_w,    &
+         curr_secs,i_sssf,                                                &  !urix
+         z0_water,FS0,betaWA,                                             &  !urix         
+         xland,xlat,xlong,dx,g,emis_seas,seasin,                          &
+         ids,ide, jds,jde, kds,kde,                                       &
+         ims,ime, jms,jme, kms,kme,                                       &
+         its,ite, jts,jte, kts,kte)
+  USE module_configure
+  USE module_state_description
+  USE module_swan_interface
+  USE module_model_constants, ONLY: mwdry
+  USE module_data_gocart_seas, ONLY: den_seas
+
+#ifdef DM_PARALLEL
+  USE module_dm
+#endif
+
+  IMPLICIT NONE
+   TYPE(grid_config_rec_type),  INTENT(IN   )    :: config_flags
+
+  INTEGER,INTENT(IN)::julday,ktau,ids,ide,jds,jde,kds,kde,ims,ime,jms,jme,kms,kme,       &
+                      its,ite, jts,jte, kts,kte
+  INTEGER,INTENT(IN)::i_sssf               !! urix                    
+  REAL,DIMENSION(ims:ime,kms:kme,jms:jme,num_moist),INTENT(IN)::moist
+  REAL,DIMENSION(ims:ime,kms:kme,jms:jme,num_chem ),INTENT(INOUT)::chem
+  REAL,DIMENSION(ims:ime,1,jms:jme,num_emis_seas),OPTIONAL,INTENT(INOUT)::emis_seas
+  REAL,DIMENSION(ims:ime,jms:jme ),INTENT(IN)::u10,v10,ust,xland,xlat,xlong 
+  REAL,DIMENSION(ims:ime,jms:jme,5),INTENT(INOUT)::seasin
+  REAL,DIMENSION(ims:ime,jms:jme),INTENT(INOUT)::z0_water,FS0,betaWA
+  REAL,DIMENSION(ims:ime,kms:kme,jms:jme),INTENT(IN)::alt,t_phy,dz8w,p8w,z_at_w,        &
+                                                      u_phy,v_phy,rho_phy 
+
+  REAL, INTENT(IN   ) :: dt,dx,g
+  REAL (KIND=8) :: curr_secs
+!
+! local variables
+!
+  integer :: ipr,nmx,i,j,k,ndt,imx,jmx,lmx
+  
+  !! urix dec 2018  - i_sssf in the namelist.chem     !urix-start
+  !!integer, parameter   :: i_sssf=1     !! 1: monahan 86/gong 2003 
+                                         !! 2: demoisson 2013/Guan et al 2007
+                                         !! 3: coupled-swan/WW3 ascii
+                                         !! 4: coupled-WW3 - ascii input
+  real*8               :: ustar,betaTij,wpfij
+  INTEGER              :: time_chunk,nchunk,runDAYS,irec_start,nx,ny,nt,i3sf
+  INTEGER              :: astat,ncid, varid,jt,dimid
+  INTEGER, PARAMETER   :: rnum8=4
+  logical Tcond0
+  integer :: jtime,idum,jdum,jtdum
+  real :: ldum                        !urix - end
+  
+  integer,dimension (1,1) :: ilwi
+  real*8, DIMENSION (4) :: tc,bems
+  real*8, dimension (1,1) :: w10m,gwet,airden,airmas
+  real*8, dimension (1) :: dxy
+  real*8 conver,converi
+  real, save,allocatable,dimension  (:,:,:) :: FPWW3     !urix-start
+  real,dimension  (ids:ide-1,jds:jde-1)   :: wpf         
+  character (len=12)      :: filename
+  character (len=46)      :: err_msg
+#ifdef DM_PARALLEL
+  LOGICAL , EXTERNAL      :: wrf_dm_on_monitor
+#endif
+#define DM_BCAST_MACRO(A) CALL wrf_dm_bcast_bytes ( A , size ( A ) * rnum8)
+  include 'netcdf.inc'                                    !urix-end
+
+  conver=1.d-9
+  converi=1.d9
+!
+! number of dust bins
+!
+  imx=1
+  jmx=1
+  lmx=1
+  nmx=4          ! number of sea salt bins
+  k=kts
+! -------------------------------------------------- !urix-start -------------------------  
+  if (i_sssf.eq.2) then                            
+     call nl_get_run_days(1,runDAYS)
+     time_chunk  = (runDAYS*24*3600)/(3.*3600.)       !! urix 3=hours nettuno output
+     nchunk      = time_chunk*(config_flags%e_we-1)
+     open(9999,file="nettuno_wrfchem_domain.dat",access="direct",form="unformatted",recl=3*8)
+
+  else if (i_sssf.eq.4) then                        !! coupled swan/WW3 netCDF
+     !nx=config_flags%e_we
+     !ny=config_flags%e_sn
+     i3sf=1+int(curr_secs/3600.0)            !! 0-3600 i3sf=1; 3600-7200 i3sf=2 .......
+#ifdef DM_PARALLEL
+     IF ( wrf_dm_on_monitor() ) THEN      !!! ... read array at rank-0
+        Tcond0=curr_secs.eq.0.00
+        if (Tcond0) then
+           nt=(config_flags%run_days)*24-23
+           allocate (FPWW3(1:nt,0:ide-2,0:jde-2))     !!! allocate array (only first-step)
+           open(9999,file="newFP.dat")
+           do jtime=0,nt-1,1
+               do j=0,jde-2,1
+                  do i=0,ide-2,1
+                     read(9999,*)jtdum,idum,jdum,ldum,FPWW3(jtime,i,j)
+                  end do
+               end do
+           end do
+        end if
+        wpf(ids:ide-1,jds:jde-1)=FPWW3(i3sf,ids-1:ide-2,jds-1:jde-2)
+     ENDIF
+     DM_BCAST_MACRO(wpf)                     !! ... bcast array-wpf
+#endif
+  endif         !! end if i_sssf=4
+! -------------------------------------------------- !urix-end ---------------------------   
+
+  do j=jts,jte
+  do i=its,ite
+!
+! do sea-spray over water!!!
+!
+     !!if(xland(i,j).gt.1.5.and.z_at_w(i,kts,j).lt.1.e-3)then
+     IF((XLAND(I,J)-1.5).GE.0)THEN                              !urix
+        ilwi(1,1)=0
+        if(config_flags%chem_opt == 2 .or. config_flags%chem_opt == 11 ) then
+          tc(:)=1.e-16*conver
+        else
+          tc(1)=chem(i,kts,j,p_seas_1)*conver
+          tc(2)=chem(i,kts,j,p_seas_2)*conver
+          tc(3)=chem(i,kts,j,p_seas_3)*conver
+          tc(4)=chem(i,kts,j,p_seas_4)*conver
+        endif
+        w10m(1,1)=sqrt(u10(i,j)*u10(i,j)+v10(i,j)*v10(i,j))
+        ustar       = ust(i,j)
+        airmas(1,1)=-(p8w(i,kts+1,j)-p8w(i,kts,j))*dx*dx/g      !! [units: kg]
+!
+! we don't trust the u10,v10 values, is model layers are very thin near surface
+        if(dz8w(i,kts,j).lt.12.) then 
+           w10m=sqrt(u_phy(i,kts,j)*u_phy(i,kts,j)+v_phy(i,kts,j)*v_phy(i,kts,j))
+        endif
+        dxy(1)=dx*dx
+        ipr=0
+! -------------------------------------------------- !urix-start -------------------------         
+        if (i_sssf.eq.1) then                     !! M86 or G03
+           call source_ss( imx,jmx,lmx,nmx, dt, tc,ilwi, dxy, w10m, airmas, bems,ipr)
+        else if (i_sssf.eq.2) then                !! D13 - nettuno
+            irec_start = (time_chunk*(i-1)+1)+nchunk*(j-1)
+            call source_d13(imx,jmx,lmx,nmx,dt,tc,ilwi,dxy,w10m,ustar,airmas,bems,ipr,    & 
+                            time_chunk,nchunk,curr_secs,irec_start)
+        else if (i_sssf.eq.3) then                !! Swan
+            irec_start = (time_chunk*(i-1)+1)+nchunk*(j-1)
+            call source_swan(i,j,imx,jmx,lmx,nmx,dt,tc,ilwi,dxy,w10m,ustar,airmas,bems,   &
+                            ipr,time_chunk,nchunk,curr_secs,irec_start,z0_water(i,j))
+        else if (i_sssf.eq.4) then                !! coupled WW3
+            wpfij=wpf(i,j)
+            betaTij=(1.56131/wpfij)/ustar         !! beta=CP/ustar
+            betaWA(i,j)=betaTij                   !! to be used in ./phys
+            call source_nc(i,j,imx,jmx,lmx,nmx,dt,tc,ilwi,dxy,w10m,ustar,airmas,bems,ipr, & 
+                            betaTij,z0_water(i,j))
+        endif
+! -------------------------------------------------- !urix-end ---------------------------        
+        if(config_flags%chem_opt == 2 .or. config_flags%chem_opt == 11 ) then
+           seasin(i,j,1:4)=tc(1:4)*converi
+        else
+           chem(i,kts,j,p_seas_1)=tc(1)*converi
+           chem(i,kts,j,p_seas_2)=tc(2)*converi
+           chem(i,kts,j,p_seas_3)=tc(3)*converi
+           chem(i,kts,j,p_seas_4)=tc(4)*converi
+        endif
+        emis_seas(i,1,j,p_eseas1)=bems(1)                  ! for output diagnostics
+        emis_seas(i,1,j,p_eseas2)=bems(2)                  ! must be [kg/m^2/s]
+        emis_seas(i,1,j,p_eseas3)=bems(3)                  ! bems unit: kg
+        emis_seas(i,1,j,p_eseas4)=bems(4)                  ! FS0 is in m^3 m^-2 s^-1
+        FS0(i,j) = (bems(1)+bems(2)+bems(3)+bems(4))/(dx*dx*dt)/den_seas(1)
+     endif     !! end-if over water
+  enddo
+  enddo
+!
+
+end subroutine gocart_seasalt_driver
+!
+SUBROUTINE source_ss(imx,jmx,lmx,nmx, dt1, tc, &
+                     ilwi, dxy, w10m, airmas, &
+                     bems,ipr)
+
+! ****************************************************************************
+! *  Evaluate the source of each seasalt particles size classes  (kg/m3) 
+! *  by soil emission.
+! *  Input:
+! *         SSALTDEN  Sea salt density                               (kg/m3)
+! *         DXY       Surface of each grid cell                     (m2)
+! *         NDT1      Time step                                     (s)
+! *         W10m      Velocity at the anemometer level (10meters)   (m/s)
+! *      
+! *  Output:
+! *         DSRC      Source of each sea salt bins       (kg/timestep/cell) 
+! *
+! *
+! * Number flux density: Original formula by Monahan et al. (1986) adapted
+! * by Sunling Gong (JGR 1997 (old) and GBC 2003 (new)).  The new version is
+! * to better represent emission of sub-micron sea salt particles.
+!
+! * dFn/dr = c1*u10**c2/(r**A) * (1+c3*r**c4)*10**(c5*exp(-B**2))
+! * where B = (b1 -log(r))/b2
+! * see c_old, c_new, b_old, b_new below for the constants.
+! * number fluxes are at 80% RH.
+! *
+! * To calculate the flux:
+! * 1) Calculate dFn based on Monahan et al. (1986) and Gong (2003)
+! * 2) Assume that wet radius r at 80% RH = dry radius r_d *frh
+! * 3) Convert particles flux to mass flux :
+! *    dFM/dr_d = 4/3*pi*rho_d*r_d^3 *(dr/dr_d) * dFn/dr
+! *             = 4/3*pi*rho_d*r_d^3 * frh * dFn/dr
+! *               where rho_p is particle density [kg/m3]
+! *    The factor 1.e-18 is to convert in micro-meter r_d^3
+! ****************************************************************************
+ 
+
+  USE module_data_gocart_seas
+
+  IMPLICIT NONE
+
+  INTEGER, INTENT(IN)    :: nmx,imx,jmx,lmx,ipr
+  INTEGER, INTENT(IN)    :: ilwi(imx,jmx)
+  REAL*8,    INTENT(IN)    :: dxy(jmx), w10m(imx,jmx)
+  REAL*8,    INTENT(IN)    :: airmas(imx,jmx,lmx)
+  REAL*8,    INTENT(INOUT) :: tc(imx,jmx,lmx,nmx)
+  REAL*8,    INTENT(OUT)   :: bems(imx,jmx,nmx)
+
+  REAL*8 :: c0(5), b0(2)
+!  REAL*8, PARAMETER :: c_old(5)=(/1.373, 3.41, 0.057, 1.05, 1.190/) 
+!  REAL*8, PARAMETER :: c_new(5)=(/1.373, 3.41, 0.057, 3.45, 1.607/)
+  ! Change suggested by MC
+  REAL*8, PARAMETER :: c_old(5)=(/1.373, 3.2, 0.057, 1.05, 1.190/) 
+  REAL*8, PARAMETER :: c_new(5)=(/1.373, 3.2, 0.057, 3.45, 1.607/)
+  REAL*8, PARAMETER :: b_old(2)=(/0.380, 0.650/)
+  REAL*8, PARAMETER :: b_new(2)=(/0.433, 0.433/)
+  REAL*8, PARAMETER :: dr=5.0D-2 ! um   
+  REAL*8, PARAMETER :: theta=30.0
+  ! Swelling coefficient frh (d rwet / d rd)
+!!!  REAL*8,    PARAMETER :: frh = 1.65
+  REAL*8,    PARAMETER :: frh = 2.d0
+  LOGICAL, PARAMETER :: old=.TRUE., new=.FALSE.
+  REAL*8 :: rho_d, r0, r1, r, r_w, a, b, dfn, r_d, dfm, src
+  INTEGER :: i, j, n, nr, ir
+  REAL :: dt1
+
+
+  REAL*8                  :: tcmw(nmx), ar(nmx), tcvv(nmx)
+  REAL*8                  :: ar_wetdep(nmx), kc(nmx)
+  CHARACTER(LEN=20)     :: tcname(nmx), tcunits(nmx)
+  LOGICAL               :: aerosol(nmx)
+
+
+  REAL*8 :: tc1(imx,jmx,lmx,nmx)
+  REAL*8, TARGET :: tcms(imx,jmx,lmx,nmx) ! tracer mass (kg; kgS for sulfur case)
+  REAL*8, TARGET :: tcgm(imx,jmx,lmx,nmx) ! g/m3
+
+  !-----------------------------------------------------------------------  
+  ! sea salt specific
+  !-----------------------------------------------------------------------  
+! REAL*8, DIMENSION(nmx) :: ra, rb
+! REAL*8 :: ch_ss(nmx,12)
+
+  !-----------------------------------------------------------------------  
+  ! emissions (input)
+  !-----------------------------------------------------------------------  
+  REAL*8 :: e_an(imx,jmx,2,nmx), e_bb(imx,jmx,nmx), &
+          e_ac(imx,jmx,lmx,nmx)
+
+  !-----------------------------------------------------------------------  
+  ! diagnostics (budget)
+  !-----------------------------------------------------------------------
+!  ! tendencies per time step and process
+!  REAL*8, TARGET :: bems(imx,jmx,nmx), bdry(imx,jmx,nmx), bstl(imx,jmx,nmx)
+!  REAL*8, TARGET :: bwet(imx,jmx,nmx), bcnv(imx,jmx,nmx)!
+
+!  ! integrated tendencies per process
+!  REAL*8, TARGET :: tems(imx,jmx,nmx), tstl(imx,jmx,nmx)
+!  REAL*8, TARGET :: tdry(imx,jmx,nmx), twet(imx,jmx,nmx), tcnv(imx,jmx,nmx)
+
+  ! global mass balance per time step 
+  REAL*8 :: tmas0(nmx), tmas1(nmx)
+  REAL*8 :: dtems(nmx), dttrp(nmx), dtdif(nmx), dtcnv(nmx)
+  REAL*8 :: dtwet(nmx), dtdry(nmx), dtstl(nmx)
+  REAL*8 :: dtems2(nmx), dttrp2(nmx), dtdif2(nmx), dtcnv2(nmx)
+  REAL*8 :: dtwet2(nmx), dtdry2(nmx), dtstl2(nmx)
+
+  ! detailed integrated budgets for individual emissions
+  REAL*8, TARGET :: ems_an(imx,jmx,nmx),    ems_bb(imx,jmx,nmx), ems_tp(imx,jmx)
+  REAL*8, TARGET :: ems_ac(imx,jmx,lmx,nmx)
+  REAL*8, TARGET :: ems_co(imx,jmx,nmx)
+
+
+  ! executable statements
+
+  DO n = 1,nmx
+!    if(ipr.eq.1)write(0,*)'in seasalt',n,ipr,ilwi
+     bems(:,:,n) = 0.0
+     rho_d = den_seas(n)
+     r0 = ra(n)*frh
+     r1 = rb(n)*frh
+     r = r0
+     nr = INT((r1-r0)/dr+.001)
+!    if(ipr.eq.1.and.n.eq.1)write(0,*)'in seasalt',nr,r1,r0,dr,rho_d
+     DO ir = 1,nr
+        r_w = r + dr*0.5
+        r = r + dr
+        IF (new) THEN
+           a = 4.7*(1.0 + theta*r_w)**(-0.017*r_w**(-1.44))
+           c0 = c_new
+           b0 = b_new
+        ELSE
+           a = 3.0
+           c0 = c_old
+           b0 = b_old
+        END IF
+        !
+        b = (b0(1) - LOG10(r_w))/b0(2)
+        dfn = (c0(1)/r_w**a)*(1.0 + c0(3)*r_w**c0(4))* &
+             10**(c0(5)*EXP(-(b**2)))
+        
+        r_d = r_w/frh*1.0D-6  ! um -> m
+        dfm = 4.0/3.0*pi*r_d**3*rho_d*frh*dfn*dr*dt1
+        DO i = 1,imx
+           DO j = 1,jmx
+!              IF (water(i,j) > 0.0) THEN
+              IF (ilwi(i,j) == 0) THEN
+!                 src = dfm*dxy(j)*water(i,j)*w10m(i,j)**c0(2)
+                 src = dfm*dxy(j)*w10m(i,j)**c0(2)
+!                 src = ch_ss(n,dt(1)%mn)*dfm*dxy(j)*w10m(i,j)**c0(2)
+                 if(src < 0.0 ) src=0.
+                 tc(i,j,1,n) = tc(i,j,1,n) + src/airmas(i,j,1)
+!                if(ipr.eq.1)write(0,*)n,dfm,c0(2),dxy(j),w10m(i,j),src,airmas(i,j,1)
+              ELSE
+                 src = 0.0
+              END IF
+              bems(i,j,n) = bems(i,j,n) + src
+           END DO  ! i
+        END DO ! j
+     END DO ! ir
+  END DO ! n
+
+END SUBROUTINE source_ss
+SUBROUTINE source_d13(imx,jmx,lmx,nmx, dt1, tc,                                  &
+                      ilwi, dxy, w10m, ustar, airmas, bems,ipr,                  &
+                      time_chunk,nchunk,curr_secs,irec_start)
+
+! ****************************************************************************
+! *  Evaluate the source of each seasalt particles size classes  (kg/m3) 
+! *  by soil emission.
+! *  Input:
+! *         SSALTDEN  Sea salt density                              (kg/m3)
+! *         DXY       Surface of each grid cell                     (m2)
+! *         NDT1      Time step                                     (s)
+! *         W10m      Velocity at the anemometer level (10meters)   (m/s)
+! *         ust       friction velocity                             (m/s)
+! *      
+! *  Output:
+! *         DSRC      Source of each sea salt bins       (kg/timestep/cell) 
+! *
+! *
+! * Number flux density: Original formula by Demoisson et  al. (2013)
+! * Demoisson, Ambre, Gilles Tedeschi, and Jacques Piazzola. 
+! * "A model for the atmospheric transport of sea-salt particles in coastal areas."
+! * Atmospheric Research 132 (2013): 144-153. 
+
+! * adapted by Umberto Rizza sept 2016.  
+! * nettuno wave data - feb 2017
+
+! * dF/dr = W*dFn/dr
+! * W = 4.169*(Cp/ust)**(-2.708)    !! Cp is the phase speed at the peak freq 
+!                                      of the wave spectrum
+! 
+! * dFn/dr = 3.575*10**5/(r**3) * (1+0.057*r**1.05) * 
+!            10**(A1*exp(-B1**2)+A2*exp(-B2**2)+A3*exp(-B3**2))
+
+! * where B1 = (-1.53 -log(r))/0.55
+! * where B2 = (-0.51 -log(r))/0.57
+! * where B3 = ( 0.57 -log(r))/0.52
+! * A1=4.5 / A2=0.408 / A3=0.931
+
+! * To calculate the flux:
+! * 1) Calculate dFn based on Demoisson et al 2013 
+! * 2) Assume that wet radius r at 80% RH = dry radius r_d *frh
+! * 3) Convert particles flux to mass flux :
+! *    dFM/dr_d = 4/3*pi*rho_d*r_d^3 *(dr/dr_d) * dFn/dr
+! *             = 4/3*pi*rho_d*r_d^3 * frh * dFn/dr
+! *               where rho_p is particle density [kg/m3]
+! *    The factor 1.e-18 is to convert in micro-meter r_d^3
+! ****************************************************************************
+  USE module_data_gocart_seas
+
+  IMPLICIT NONE
+
+  INTEGER, INTENT(IN)      :: nmx,imx,jmx,lmx,ipr
+  INTEGER, INTENT(IN)      :: ilwi(imx,jmx)
+  REAL*8,    INTENT(IN)    :: dxy(jmx), w10m(imx,jmx)
+  REAL*8,    INTENT(IN)    :: airmas(imx,jmx,lmx)
+  REAL*8,    INTENT(INOUT) :: tc(imx,jmx,lmx,nmx)
+  REAL*8,    INTENT(OUT)   :: bems(imx,jmx,nmx)
+
+  REAL*8 :: c0(5), b0(2), B_D13(3)                              !! urix
+  REAL*8, PARAMETER :: A_D13(3)=(/4.5, 0.408, 0.931/)           !! urix
+  
+  REAL*8, PARAMETER :: dr=5.0D-2 ! um   
+  REAL*8, PARAMETER :: theta=30.0
+  ! Swelling coefficient frh (d rwet / d rd)
+  REAL*8,    PARAMETER :: frh = 2.d0
+
+  REAL*8  :: rho_d, r0, r1, r, r_w, a, b, dfn, r_d, dfm, src
+  INTEGER :: i, j, n, nr, ir
+  REAL    :: dt1
+
+  real*8, parameter :: wave_age=5.0                     
+  real*8, parameter :: cpw_mean=8.33                   !! wave velocity cpw=g/(2pi)*Tp 
+
+  real*8   :: c01,c02,whtcap,ph_speed,ustar,exp_t1,exp_t2,exp_t3          !! urix
+  real   :: ustar_wam1,cpw1,jtime_secs_wam1
+  real   :: ustar_wam2,cpw2,jtime_secs_wam2
+  real*8   :: ustar_wam,cpw
+  real*8   :: curr_secs
+  INTEGER  :: ilon1,jlat1,land_wrf1,ilon2,jlat2,land_wrf2
+  INTEGER  :: time_chunk,nchunk,irec,irec_start,jtime
+
+  REAL*8            :: tcmw(nmx), ar(nmx), tcvv(nmx)
+  REAL*8            :: ar_wetdep(nmx), kc(nmx)
+  CHARACTER(LEN=20) :: tcname(nmx), tcunits(nmx)
+  LOGICAL           :: aerosol(nmx)
+
+  REAL*8         :: tc1(imx,jmx,lmx,nmx)
+  REAL*8, TARGET :: tcms(imx,jmx,lmx,nmx) ! tracer mass (kg; kgS for sulfur case)
+  REAL*8, TARGET :: tcgm(imx,jmx,lmx,nmx) ! g/m3
+
+  !-----------------------------------------------------------------------  
+  ! emissions (input)
+  !-----------------------------------------------------------------------  
+  REAL*8 :: e_an(imx,jmx,2,nmx), e_bb(imx,jmx,nmx), &
+            e_ac(imx,jmx,lmx,nmx)
+
+  ! global mass balance per time step 
+  REAL*8 :: tmas0(nmx), tmas1(nmx)
+  REAL*8 :: dtems(nmx), dttrp(nmx), dtdif(nmx), dtcnv(nmx)
+  REAL*8 :: dtwet(nmx), dtdry(nmx), dtstl(nmx)
+  REAL*8 :: dtems2(nmx), dttrp2(nmx), dtdif2(nmx), dtcnv2(nmx)
+  REAL*8 :: dtwet2(nmx), dtdry2(nmx), dtstl2(nmx)
+
+  ! detailed integrated budgets for individual emissions
+  REAL*8, TARGET :: ems_an(imx,jmx,nmx),    ems_bb(imx,jmx,nmx), ems_tp(imx,jmx)
+  REAL*8, TARGET :: ems_ac(imx,jmx,lmx,nmx)
+  REAL*8, TARGET :: ems_co(imx,jmx,nmx)
+
+  B_D13(1) = (-1.53-LOG10(r_w))/0.55          !! urix: gaussian terms of D13 model
+  B_D13(2) = (-0.51-LOG10(r_w))/0.57
+  B_D13(3) = ( 0.57-LOG10(r_w))/0.52
+
+  DO n = 1,nmx
+     bems(:,:,n) = 0.0
+     rho_d = den_seas(n)
+     r0 = ra(n)*frh
+     r1 = rb(n)*frh
+     r = r0
+     nr = INT((r1-r0)/dr+.001)
+     DO ir = 1,nr
+        r_w = r + dr*0.5
+        r = r + dr
+        
+        c01 = 3.575*10**5
+        c02 = 0.057
+        exp_t1 = A_D13(1)*exp(-B_D13(1)**2)
+        exp_t2 = A_D13(2)*exp(-B_D13(2)**2)
+        exp_t3 = A_D13(3)*exp(-B_D13(3)**2)
+        dfn = c01/r_w**3 * (1+c02*r_w**1.05) * 10**(exp_t1+exp_t2+exp_t3)             
+        r_d = r_w/frh*1.0D-6  ! um -> m
+        dfm = 4.0/3.0*pi*r_d**3*rho_d*frh*dfn*dr*dt1
+
+        DO i = 1,imx
+           DO j = 1,jmx
+
+              irec=irec_start
+              do jtime=1,time_chunk-1,1
+                 read(9999,rec=irec)  ustar_wam1,cpw1,jtime_secs_wam1
+                 ustar_wam=ustar_wam1
+                 cpw=cpw1
+              end do                !! end jtime loop (nchunk-56)
+
+              IF (ilwi(i,j) == 0) THEN
+
+                 !!whtcap = 4.169/(cpw/ustar_wam)**2.708  !! whitecap fraction D13              
+                 if (cpw/ustar_wam.lt.15.0) then
+                    whtcap = 2.1/(cpw/ustar_wam)**1.75    !! whitecap fraction lafon-2004
+                 else
+                    whtcap = 2.0*10**4/(cpw/ustar_wam)**4.90  
+                 endif
+                 src = dfm*dxy(j)*whtcap
+
+                 if(src < 0.0 ) src=0.
+                 tc(i,j,1,n) = tc(i,j,1,n) + .25*src/airmas(i,j,1)
+              ELSE
+                 src = 0.0
+              END IF
+
+              bems(i,j,n) = bems(i,j,n) + .25*src
+           END DO  ! i
+        END DO ! j
+
+     END DO ! ir
+  END DO ! n
+
+END SUBROUTINE source_d13
+! ----------------------------------------------------------------------------------------
+SUBROUTINE source_swan(ilocal,jlocal,imx,jmx,lmx,nmx, dt1, tc,                    &
+                      ilwi, dxy, w10m, ustar, airmas, bems,ipr,     & 
+                      time_chunk,nchunk,curr_secs,irec_start,z0_ow1)
+
+! ****************************************************************************
+! *  Evaluate the source of each seasalt particles size classes  (kg/m3) 
+! *  by soil emission.
+! *  Input:
+! *         SSALTDEN  Sea salt density                               (kg/m3)
+! *         DXY       Surface of each grid cell                     (m2)
+! *         NDT1      Time step                                     (s)
+! *         W10m      Velocity at the anemometer level (10meters)   (m/s)
+! *         ust       friction velocity                             (m/s)
+! *      
+! *  Output:
+! *         DSRC      Source of each sea salt bins       (kg/timestep/cell) 
+! *
+! *
+
+!!* Wan, Z.H., Zhu, J.B., Sun, K. and Zhou, K., 2017. An integrated turbulent simulation 
+!!* and parameter modeling study on sea-spray dynamics and fluxes. 
+!!* Ocean Engineering, 130, pp.64-71.
+
+! * adapted by Umberto Rizza Ago 2017.  
+! * swan wave data - ago 2017
+
+! * using r_0 e non r80 to compute dfn/dr
+! * r_0 = 4r_d => frh=4
+
+! * To calculate the flux:
+
+! * 1) Calculate dFn based on Wan et al 2017 
+! 
+! * 2) Assume that radius r at 98% RH = dry radius r_d *frh
+
+! * 3) Convert particles flux to mass flux :
+! *    dFM/dr_d = 4/3*pi*rho_d*r_d^3 *(dr/dr_d) * dFn/dr
+! *             = 4/3*pi*rho_d*r_d^3 * frh * dFn/dr
+! *               where rho_p is particle density [kg/m3]
+! *    The factor 1.e-18 is to convert in micro-meter r_d^3
+! ****************************************************************************
+  USE module_data_gocart_seas
+  USE module_swan_interface
+
+  IMPLICIT NONE
+
+  INTEGER, INTENT(IN)    :: nmx,imx,jmx,lmx,ipr
+  INTEGER, INTENT(IN)    :: ilwi(imx,jmx)
+  REAL*8,  INTENT(IN)    :: dxy(jmx), w10m(imx,jmx)
+  REAL*8,  INTENT(IN)    :: airmas(imx,jmx,lmx)
+  REAL*8,  INTENT(INOUT) :: tc(imx,jmx,lmx,nmx)
+  REAL*8,  INTENT(OUT)   :: bems(imx,jmx,nmx)
+  REAL*8,  PARAMETER     :: dr=1.0           !! (1 um) - modified for swan   
+  REAL*8,  PARAMETER     :: theta=30.0
+  REAL*8,  PARAMETER     :: frh = 1.0        !! r_0 x dfn e dfm
+
+  REAL*8   :: rho_d,r0,r1,r,r_w,a,b,r_d,dfm,src,r_0,r_eff
+  REAL*8   :: dfn
+  INTEGER  :: i, j, n, nr, ir
+  INTEGER  :: ilocal,jlocal                             !! urix
+  REAL     :: dt1
+  real*8   :: c01,c02,whtcap,ph_speed,ustar,SRB         !! urix
+  real     :: ustar_wam1,cpw1,jtime_secs_wam1
+  real     :: ustar_wam2,cpw2,jtime_secs_wam2
+  real*8   :: ustar_wam,cpw,beta,beta1,beta2,ustar3
+  real*8   :: curr_secs
+  real     :: z0_ow1
+  INTEGER  :: ilon1,jlat1,land_wrf1,ilon2,jlat2,land_wrf2
+  INTEGER  :: time_chunk,nchunk,irec,irec_start,jtime
+  real, parameter   :: visc_air=15.11D-6             !! urix
+  REAL*8            :: tcmw(nmx), ar(nmx), tcvv(nmx)
+  REAL*8            :: ar_wetdep(nmx), kc(nmx)
+  CHARACTER(LEN=20) :: tcname(nmx), tcunits(nmx)
+  LOGICAL           :: aerosol(nmx)
+  REAL*8            :: tc1(imx,jmx,lmx,nmx)
+  REAL*8, TARGET    :: tcms(imx,jmx,lmx,nmx) ! tracer mass (kg; kgS for sulfur case)
+  REAL*8, TARGET    :: tcgm(imx,jmx,lmx,nmx) ! g/m3
+  REAL*8            :: e_an(imx,jmx,2,nmx), e_bb(imx,jmx,nmx),e_ac(imx,jmx,lmx,nmx)
+
+  ! global mass balance per time step 
+  REAL*8 :: tmas0(nmx), tmas1(nmx)
+  REAL*8 :: dtems(nmx), dttrp(nmx), dtdif(nmx), dtcnv(nmx)
+  REAL*8 :: dtwet(nmx), dtdry(nmx), dtstl(nmx)
+  REAL*8 :: dtems2(nmx), dttrp2(nmx), dtdif2(nmx), dtcnv2(nmx)
+  REAL*8 :: dtwet2(nmx), dtdry2(nmx), dtstl2(nmx)
+
+  ! detailed integrated budgets for individual emissions
+  REAL*8, TARGET :: ems_an(imx,jmx,nmx),ems_bb(imx,jmx,nmx), ems_tp(imx,jmx)
+  REAL*8, TARGET :: ems_ac(imx,jmx,lmx,nmx)
+  REAL*8, TARGET :: ems_co(imx,jmx,nmx)
+  
+  irec=irec_start
+  do jtime=1,time_chunk-1,1
+     read(9999,rec=irec)  ustar_wam1,beta1,jtime_secs_wam1
+     read(9999,rec=irec+1)ustar_wam2,beta2,jtime_secs_wam2
+     irec=irec+1
+     if (curr_secs >=  jtime_secs_wam1.AND.curr_secs < jtime_secs_wam2) then
+         ustar_wam=ustar_wam1+(ustar_wam2-ustar_wam1)/(jtime_secs_wam2-jtime_secs_wam1)* &
+                   (curr_secs-jtime_secs_wam1)                                
+         beta=beta1+(beta2-beta1)/(jtime_secs_wam2-jtime_secs_wam1)* & 
+             (curr_secs-jtime_secs_wam1)
+         exit
+     endif
+  end do                !! end jtime loop
+  
+  !!beta   = cpw/ustar_wam
+  ustar3 = ustar_wam**3
+  SRB    = ((ustar3*beta)/(visc_air*9.81))**1.5
+  CL     = 9.81*20.0/(ustar_wam*ustar_wam)
+  omega  = min(1.0,VG/(0.41*ustar))
+  omega1 = 1.0/omega
+  omega2 = 1.0-omega1
+
+  !!Z0_water(ilocal,jlocal) = (CL**omega2)*0.0185**omega1               !! Makin 2005 
+  
+  if (beta.ge.0.00.AND.beta.lt.35.0)then                           !! liu et al., 2012
+  !if (beta.gt.0.35.AND.beta.lt.35.0)then                           !! liu et al., 2012
+      alfa = 0.03*beta*exp(-0.14*beta)
+      z0_ow1 = ((0.085*beta**1.5)**omega2)*(alfa**omega1)
+  else if (beta.ge.35.0) then
+      alfa = 0.008
+      Z0_ow1 = (17.60**omega2)*(alfa**omega1)
+  endif
+    
+  DO n = 1,nmx
+     bems(:,:,n) = 0.0
+     rho_d = den_seas(n)
+     !!r0 = ra(n)*frh
+     !!r1 = rb(n)*frh
+     r0 = ra(n)
+     r1 = rb(n)
+     r = r0
+     nr = INT((r1-r0)/dr+0.001)
+
+     DO ir = 1,nr                        !! calcolo dfn/dr0
+        r = r + dr               
+        r_0 = r                          !! r_0 = r98 raggio all'emissione (um)
+        if (n==1) then
+            dfn = 1.43D-3*SRB/r_0**(0.5)
+        else if (n==2) then
+            dfn = 7.84D-3*SRB/r_0
+        else if (n==3) then
+            dfn = 4.41D1*SRB/r_0**3
+        else if (n==4) then
+            dfn = 1.41D13*SRB/r_0**8
+        endif 
+               
+        !!r_d = r_w/frh*1.0D-6            ! um -> m
+        !!r_d = r_0/4.0*1.0D-6            ! um -> m
+
+        r_eff = r_0/frh*1.0D-6                  ! um -> m
+        dfm = 4.0/3.0*pi*(r_eff**3)*rho_d*frh*dfn*dr*dt1     
+        
+        DO i = 1,imx
+           DO j = 1,jmx
+              IF (ilwi(i,j) == 0) THEN
+                 src = dfm*dxy(j)
+                 if(src < 0.0 ) src=0.
+                 tc(i,j,1,n) = tc(i,j,1,n) + .25*src/airmas(i,j,1)
+              ELSE
+                 src = 0.0
+              END IF
+              bems(i,j,n) = bems(i,j,n) + .25*src
+           END DO  ! i
+        END DO ! j
+
+     END DO ! ir
+  END DO ! n
+
+  END SUBROUTINE source_swan
+! ----------------------------------------------------------------------------------------
+  SUBROUTINE source_nc(ilocal,jlocal,imx,jmx,lmx,nmx, dt1, tc,                    &
+                      ilwi, dxy, w10m, ustar, airmas, bems,ipr,betaTij,z0_ow) 
+
+  USE module_data_gocart_seas
+  USE module_swan_interface
+
+  IMPLICIT NONE
+
+  INTEGER, INTENT(IN)    :: nmx,imx,jmx,lmx,ipr
+  INTEGER, INTENT(IN)    :: ilwi(imx,jmx)
+  REAL*8,  INTENT(IN)    :: dxy(jmx), w10m(imx,jmx)
+  REAL*8,  INTENT(IN)    :: airmas(imx,jmx,lmx)
+  REAL*8,  INTENT(INOUT) :: tc(imx,jmx,lmx,nmx)
+  REAL*8,  INTENT(OUT)   :: bems(imx,jmx,nmx)
+  REAL*8,  PARAMETER     :: dr=1.0           !! (1 um) - modified for swan   
+  REAL*8,  PARAMETER     :: theta=30.0
+  REAL*8,  PARAMETER     :: frh = 1.0        !! r_0 x dfn e dfm
+
+  REAL*8   :: rho_d,r0,r1,r,r_w,a,b,r_d,dfm,src,r_0,r_eff
+  REAL*8   :: dfn
+  INTEGER  :: i, j, n, nr, ir
+  INTEGER  :: ilocal,jlocal,i3sf                             !! urix
+  REAL     :: dt1
+  real*8   :: c01,c02,whtcap,ph_speed,SRB               !! urix
+  real*8   :: ustar,ustar2,ustar3
+  real     :: z0_ow
+  INTEGER  :: ilon1,jlat1,land_wrf1,ilon2,jlat2,land_wrf2
+  INTEGER  :: time_chunk,nchunk,irec,irec_start,jtime
+  real, parameter   :: visc_air=15.11D-6             !! urix
+  REAL*8            :: tcmw(nmx), ar(nmx), tcvv(nmx)
+  REAL*8            :: ar_wetdep(nmx), kc(nmx)
+  CHARACTER(LEN=20) :: tcname(nmx), tcunits(nmx)
+  LOGICAL           :: aerosol(nmx)
+  REAL*8            :: tc1(imx,jmx,lmx,nmx)
+  REAL*8, TARGET    :: tcms(imx,jmx,lmx,nmx) ! tracer mass (kg; kgS for sulfur case)
+  REAL*8, TARGET    :: tcgm(imx,jmx,lmx,nmx) ! g/m3
+  REAL*8            :: e_an(imx,jmx,2,nmx), e_bb(imx,jmx,nmx),e_ac(imx,jmx,lmx,nmx)
+
+  ! global mass balance per time step 
+  REAL*8 :: tmas0(nmx), tmas1(nmx)
+  REAL*8 :: dtems(nmx), dttrp(nmx), dtdif(nmx), dtcnv(nmx)
+  REAL*8 :: dtwet(nmx), dtdry(nmx), dtstl(nmx)
+  REAL*8 :: dtems2(nmx), dttrp2(nmx), dtdif2(nmx), dtcnv2(nmx)
+  REAL*8 :: dtwet2(nmx), dtdry2(nmx), dtstl2(nmx)
+
+  ! detailed integrated budgets for individual emissions
+  REAL*8, TARGET :: ems_an(imx,jmx,nmx),ems_bb(imx,jmx,nmx), ems_tp(imx,jmx)
+  REAL*8, TARGET :: ems_ac(imx,jmx,lmx,nmx)
+  REAL*8, TARGET :: ems_co(imx,jmx,nmx)
+  
+  ! wave state from WW3/SWAN
+  real*8 :: betaTij
+  
+  ustar2 = ustar*ustar
+  ustar3 = ustar*ustar*ustar
+  SRB    = ((ustar3*betaTij)/(visc_air*9.81))**1.5
+  CL     = 9.81*20.0/(ustar2)
+  omega  = min(1.0,VG/(0.41*ustar))
+  omega1 = 1.0/omega
+  omega2 = 1.0-omega1
+
+  !!z0_water(ilocal,jlocal) = (CL**omega2)*0.0185**omega1              !! Makin 2005 
+  
+  if (betaTij.ge.0.00.AND.betaTij.lt.35.0)then                         !! liu et al., 2012
+  !if (beta.gt.0.35.AND.beta.lt.35.0)then                              !! liu et al., 2012
+      alfa = 0.03*betaTij*exp(-0.14*betaTij)
+      z0_ow = ((0.085*betaTij**1.5)**omega2)*(alfa**omega1)
+  else if (betaTij.ge.35.0) then
+      alfa = 0.008
+      z0_ow = (17.60**omega2)*(alfa**omega1)
+  endif
+    
+  DO n = 1,nmx
+     bems(:,:,n) = 0.0
+     rho_d = den_seas(n)
+     !!r0 = ra(n)*frh
+     !!r1 = rb(n)*frh
+     r0 = ra(n)
+     r1 = rb(n)
+     r = r0
+     nr = INT((r1-r0)/dr+0.001)
+
+     DO ir = 1,nr                        !! calcolo dfn/dr0
+        r = r + dr               
+        r_0 = r                          !! r_0 = r98 raggio all'emissione (um)
+        if (n==1) then
+            dfn = 1.43D-3*SRB/r_0**(0.5)
+        else if (n==2) then
+            dfn = 7.84D-3*SRB/r_0
+        else if (n==3) then
+            dfn = 4.41D1*SRB/r_0**3
+        else if (n==4) then
+            dfn = 1.41D13*SRB/r_0**8
+        endif 
+               
+        !!r_d = r_w/frh*1.0D-6            ! um -> m
+        !!r_d = r_0/4.0*1.0D-6            ! um -> m
+
+        r_eff = r_0/frh*1.0D-6                  ! um -> m
+        dfm = 4.0/3.0*pi*(r_eff**3)*rho_d*frh*dfn*dr*dt1     
+        
+        DO i = 1,imx
+           DO j = 1,jmx
+              IF (ilwi(i,j) == 0) THEN
+                 src = dfm*dxy(j)
+                 if(src < 0.0 ) src=0.
+                 tc(i,j,1,n) = tc(i,j,1,n) + .25*src/airmas(i,j,1)         !!! [kg/kg]
+              ELSE
+                 src = 0.0
+              END IF
+              bems(i,j,n) = bems(i,j,n) + .25*src               !! kg
+           END DO  ! i
+        END DO ! j
+
+     END DO ! ir
+  END DO ! n
+
+END SUBROUTINE source_nc
+! ----------------------------------------------------------------------------------------
+
+END MODULE GOCART_SEASALT

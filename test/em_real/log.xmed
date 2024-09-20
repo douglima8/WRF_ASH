@@ -1,0 +1,5 @@
+running day  06
+./XMED.sh: 42: ./XMED.sh: 0: Permission denied
+ real-0 OK
+./XMED.sh: 57: ./XMED.sh: 0: Permission denied
+ convert OK

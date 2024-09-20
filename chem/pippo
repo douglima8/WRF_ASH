@@ -1,0 +1,116 @@
+module_ftuv_subs.F:       call airmas( nz, z, zen, dsdh, nid, colinc, vcol, scol )
+module_ftuv_subs.F:      subroutine airmas( nz, z, zen, dsdh, nid, cz, &
+module_ftuv_subs.F:      end subroutine airmas
+module_gocart_aerosols.F:  real*8, DIMENSION (1,1,1) :: tmp,airden,airmas
+module_gocart_aerosols.F:          airmas(1,1,1)=-(p8w(i,k+1,j)-p8w(i,k,j))*dx*dx/g
+module_gocart_aerosols.F:         CALL chem_1(imx,jmx,lmx, nmx, ndt1, airmas, tc, &
+module_gocart_aerosols.F:         CALL chem_2(imx,jmx,lmx, nmx, ndt1, airmas, tc, pc2)
+module_gocart_chem.F:  real*8, DIMENSION (1,1,1) :: tmp,airden,airmas,oh,xno3,h2o2,chldms_oh,    &
+module_gocart_chem.F:          airmas(1,1,1)=-(p8w(i,k+1,j)-p8w(i,k,j))*dx*dx/g
+module_gocart_chem.F:               nmx, dt, tmp, airden, airmas, &
+module_gocart_chem.F:          airmas(1,1,1)=-(p8w(i,k+1,j)-p8w(i,k,j))*dx*dx/g
+module_gocart_chem.F:               nmx, dt, tmp, airden, airmas, &
+module_gocart_chem.F:!     imx, jmx, lmx, nmx, ndt1, tmp, drydf, airden, airmas, &
+module_gocart_chem.F:     nmx, dt1, tmp, airden, airmas, &
+module_gocart_chem.F:  REAL*8, DIMENSION(imx,jmx,lmx), INTENT(IN) :: tmp, airden, airmas
+module_gocart_chem.F:     CALL chem_dms(imx,jmx,lmx,nmx, ndt1, tmp, airden, airmas, oh, xno3, &
+module_gocart_chem.F:     CALL chem_so2(imx,jmx,lmx,nmx, ndt1, tmp, airden, airmas, &
+module_gocart_chem.F:     CALL chem_so4(imx,jmx,lmx,nmx, ndt1, airmas, tc, tdry,cossza, &
+module_gocart_chem.F:     CALL chem_msa(imx,jmx,lmx,nmx, ndt1, airmas, tc, tdry, cossza,&
+module_gocart_chem.F:     nmx, ndt1, tmp, airden, airmas, oh, xno3, &
+module_gocart_chem.F:  REAL*8, DIMENSION(imx,jmx,lmx), INTENT(IN) :: tmp, airden, airmas
+module_gocart_chem.F:           xoh  = (dms0   - dms_oh) / fx  * airmas(i,j,l)/airmw*smw
+module_gocart_chem.F:           xn3  = (dms_oh - dms)    / fx  * airmas(i,j,l)/airmw*smw
+module_gocart_chem.F:           xx   = (dms0 - dms) * airmas(i,j,l)/airmw*smw - xoh - xn3
+module_gocart_chem.F:                * airmas(i,j,l) / airmw * smw
+module_gocart_chem.F:                * airmas(i,j,l) / airmw * smw
+module_gocart_chem.F:     nmx, ndt1, tmp, airden, airmas, &
+module_gocart_chem.F:  REAL*8, DIMENSION(imx,jmx,lmx), INTENT(IN) :: tmp, airden, airmas
+module_gocart_chem.F:                + l1 * airmas(i,j,l) / airmw * smw
+module_gocart_chem.F:                + l2 * airmas(i,j,l) / airmw * smw
+module_gocart_chem.F:!                depso2(i,j) = depso2(i,j) + ld * airmas(i,j,l) / airmw * smw
+module_gocart_chem.F:                * airmas(i,j,l) / airmw * smw
+module_gocart_chem.F:     nmx, ndt1, airmas, tc, tdry, cossza,&
+module_gocart_chem.F:  REAL*8, DIMENSION(imx,jmx,lmx), INTENT(IN) :: airmas
+module_gocart_chem.F:!                * airmas(i,j,l) / airmw * smw
+module_gocart_chem.F:     nmx, ndt1, airmas, tc, tdry, cossza,&
+module_gocart_chem.F:  REAL*8, DIMENSION(imx,jmx,lmx), INTENT(IN) :: airmas
+module_gocart_chem.F:!                * airmas(i,j,l) / airmw * smw
+module_gocart_dmsemis.F:  real*8, DIMENSION (1,1,1) :: bems,airmas
+module_gocart_dmsemis.F:     airmas(1,1,1)=-1.0*(p8w(i,kts+1,j)-p8w(i,kts,j))*dx*dx/g
+module_gocart_dmsemis.F:                  tskin, ilwi, dmso, w10m, airmas, dxy, emsdms, bems)
+module_gocart_dmsemis.F:                  tskin, ilwi, dmso, w10m, airmas, dxy, emsdms, bems)
+module_gocart_dmsemis.F:  REAL*8,    INTENT(IN)    :: airmas(imx,jmx,lmx)
+module_gocart_dmsemis.F:        c = dmssrc / airmas(i,j,1) * airmw / tcmw(NDMS)
+module_gocart_dmsemis.F:!        bems(i,j,NDMS) = c * airmas(i,j,1) / airmw * smw ! kgS
+module_gocart_drydep.F:!     real*8, dimension (1,1) :: z0,w10m,gwet,airden,airmas,delz_sfc,hflux,ts,pblz,ustar,ps
+module_gocart_dust_afwa.F:  REAL*8, DIMENSION (1,1) :: airden,airmas,ustar
+module_gocart_dust_afwa.F:      airmas(1,1)=-(p8w(i,kts+1,j)-p8w(i,kts,j))*dx*dx/g
+module_gocart_dust_afwa.F:                       erodtot, ilwi, dxy, gravsm, volsm, airden, airmas, &
+module_gocart_dust_afwa.F:                         erod, ilwi, dxy, gravsm, volsm, airden, airmas, &
+module_gocart_dust_afwa.F:  REAL*8, INTENT(IN)    :: airden(imx,jmx,lmx), airmas(imx,jmx,lmx)
+module_gocart_dust_afwa.F:        tc(i,j,1,n) = tc(i,j,1,n) + dsrc / airmas(i,j,1) ! (kg/kg)
+module_gocart_dust.F:  real*8, dimension (1,1) :: w10m,gwet,airden,airmas
+module_gocart_dust.F:     airmas(1,1)=-(p8w(i,kts+1,j)-p8w(i,kts,j))*dx*dx/g
+module_gocart_dust.F:!    airmas(1,1)=   8114017750938.79
+module_gocart_dust.F:                     erodin, ilwi, dxy, w10m, gwet, airden, airmas, &
+module_gocart_dust.F:                     erod, ilwi, dxy, w10m, gwet, airden, airmas, &
+module_gocart_dust.F:  REAL*8,    INTENT(IN)    :: airden(imx,jmx,lmx), airmas(imx,jmx,lmx)
+module_gocart_dust.F:              tc(i,j,1,n) = tc(i,j,1,n) + .2*dsrc / airmas(i,j,1)
+module_gocart_seasalt_urix.F:  real*8, dimension (1,1) :: w10m,gwet,airden,airmas
+module_gocart_seasalt_urix.F:        airmas(1,1) = -(p8w(i,kts+1,j)-p8w(i,kts,j))*dx*dx/g
+module_gocart_seasalt_urix.F:           call source_ss( imx,jmx,lmx,nmx, dt, tc,ilwi, dxy, w10m, airmas, bems,ipr)
+module_gocart_seasalt_urix.F:            call source_d13(imx,jmx,lmx,nmx,dt,tc,ilwi,dxy,w10m,ustar,airmas,bems,ipr,   & 
+module_gocart_seasalt_urix.F:            call source_swan(i,j,imx,jmx,lmx,nmx,dt,tc,ilwi,dxy,w10m,ustar,airmas,bems,ipr,  & 
+module_gocart_seasalt_urix.F:            call source_nc(i,j,imx,jmx,lmx,nmx,dt,tc,ilwi,dxy,w10m,ustar,airmas,bems,ipr,  & 
+module_gocart_seasalt_urix.F:                     ilwi, dxy, w10m, airmas, &
+module_gocart_seasalt_urix.F:  REAL*8,    INTENT(IN)    :: airmas(imx,jmx,lmx)
+module_gocart_seasalt_urix.F:                 tc(i,j,1,n) = tc(i,j,1,n) + .25*src/airmas(i,j,1)
+module_gocart_seasalt_urix.F:                      ilwi, dxy, w10m, ustar, airmas, bems,ipr,                  &
+module_gocart_seasalt_urix.F:  REAL*8,    INTENT(IN)    :: airmas(imx,jmx,lmx)
+module_gocart_seasalt_urix.F:                 tc(i,j,1,n) = tc(i,j,1,n) + .25*src/airmas(i,j,1)
+module_gocart_seasalt_urix.F:                      ilwi, dxy, w10m, ustar, airmas, bems,ipr,     & 
+module_gocart_seasalt_urix.F:  REAL*8,  INTENT(IN)    :: airmas(imx,jmx,lmx)
+module_gocart_seasalt_urix.F:                 tc(i,j,1,n) = tc(i,j,1,n) + .25*src/airmas(i,j,1)
+module_gocart_seasalt_urix.F:                      ilwi, dxy, w10m, ustar, airmas, bems,ipr,betaTij,z0_ow) 
+module_gocart_seasalt_urix.F:  REAL*8,  INTENT(IN)    :: airmas(imx,jmx,lmx)
+module_gocart_seasalt_urix.F:                 tc(i,j,1,n) = tc(i,j,1,n) + .25*src/airmas(i,j,1)
+module_gocart_seasalt_urix_old.F:  real*8, dimension (1,1) :: w10m,gwet,airden,airmas
+module_gocart_seasalt_urix_old.F:        airmas(1,1) = -(p8w(i,kts+1,j)-p8w(i,kts,j))*dx*dx/g
+module_gocart_seasalt_urix_old.F:           call source_ss( imx,jmx,lmx,nmx, dt, tc,ilwi, dxy, w10m, airmas, bems,ipr)
+module_gocart_seasalt_urix_old.F:            call source_d13(imx,jmx,lmx,nmx,dt,tc,ilwi,dxy,w10m,ustar,airmas,bems,ipr,   & 
+module_gocart_seasalt_urix_old.F:            call source_swan(i,j,imx,jmx,lmx,nmx,dt,tc,ilwi,dxy,w10m,ustar,airmas,bems,ipr,  & 
+module_gocart_seasalt_urix_old.F:                     ilwi, dxy, w10m, airmas, &
+module_gocart_seasalt_urix_old.F:  REAL*8,    INTENT(IN)    :: airmas(imx,jmx,lmx)
+module_gocart_seasalt_urix_old.F:                 tc(i,j,1,n) = tc(i,j,1,n) + .25*src/airmas(i,j,1)
+module_gocart_seasalt_urix_old.F:                      ilwi, dxy, w10m, ustar, airmas, bems,ipr,                  &
+module_gocart_seasalt_urix_old.F:  REAL*8,    INTENT(IN)    :: airmas(imx,jmx,lmx)
+module_gocart_seasalt_urix_old.F:                 tc(i,j,1,n) = tc(i,j,1,n) + .25*src/airmas(i,j,1)
+module_gocart_seasalt_urix_old.F:                      ilwi, dxy, w10m, ustar, airmas, bems,ipr,     & 
+module_gocart_seasalt_urix_old.F:  REAL*8,  INTENT(IN)    :: airmas(imx,jmx,lmx)
+module_gocart_seasalt_urix_old.F:                 tc(i,j,1,n) = tc(i,j,1,n) + .25*src/airmas(i,j,1)
+module_mosaic_addemiss.F:  real*8  w10m,gwet,airden,airmas
+module_mosaic_addemiss.F:     airmas=-(p8w(i,kts+1,j)-p8w(i,kts,j))*dx*dx/g   ! kg 
+module_mosaic_addemiss.F:                     erodin, ilwi, dxy, w10m, gwet, airden, airmas, &
+module_mosaic_addemiss.F:                     erod, ilwi, dxy, w10m, gwet, airden, airmas, &
+module_mosaic_addemiss.F:  REAL*8,    INTENT(IN)    :: airden, airmas
+module_mosaic_addemiss.F:              !tc(n) = tc(n) + dsrc / airmas    !kg/kg-dryair -czhao
+module_phot_fastj.F:      real*8 airmas, gmu, xmu1, xmu2, xl, diff
+module_phot_mad.F:      ! added subroutines sphers, airmas, for future 
+module_phot_mad.F:        ! EXTERNAL sphers, airmas
+module_phot_mad.F:! here can also call airmass to compute air mass factors for Lyman alpha and 
+module_phot_mad.F:!     CALL airmas(nlevel, dsdh, nid, vair, vcol, scol)
+module_phot_mad.F:      SUBROUTINE airmas(kz, nz, dsdh, nid, cz, &
+module_phot_mad.F:      END SUBROUTINE airmas
+module_sea_salt_emis.F:  real*8, dimension (1,1) :: w10m,gwet,airden,airmas
+module_sea_salt_emis.F:     airmas(1,1)=-(p8w(i,kts+1,j)-p8w(i,kts,j))*dx*dx/g
+module_sea_salt_emis.F:    call source_ss( nmx, dt, tc,ilwi, dxy, w10m, airmas, bems)
+module_sea_salt_emis.F:                     ilwi, dxy, w10m, airmas, &
+module_sea_salt_emis.F:  REAL*8,    INTENT(IN)    :: airmas(imx,jmx,lmx)
+module_sea_salt_emis.F:                 tc(i,j,1,n) = tc(i,j,1,n) + src/airmas(i,j,1)
+module_vash_settling.F:  real*8, DIMENSION (1,1,kte-kts+1) :: tmp,airden,airmas,p_mid,delz,rh
+module_vash_settling.F:          airmas(1,1,kk)=-(p8w(i,k+1,j)-p8w(i,k,j))/g
+module_vash_settling.F:                    ash, tmp, p_mid, delz, airmas, &
+module_vash_settling.F:                    tc, tmp, p_mid, delz, airmas, &
+module_vash_settling.F:                         airmas(imx,jmx,lmx), rh(imx,jmx,lmx), &
+module_vash_settling.F:              addmass=addmass+(tc(i,j,l,n) - tc1(i,j,l,n)) * airmas(i,j,l)

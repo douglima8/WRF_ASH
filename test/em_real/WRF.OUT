@@ -1,0 +1,8 @@
+Warning: no access to tty (Bad file descriptor).
+Thus no job control in this shell.
+Running on host socrate10.cluster.it
+Time is Mon Sep 27 16:04:00 CEST 2021
+Directory is /cantiere/rizza/WRFCHEM/WRFV361/test/em_real
+This jobs runs on the following processors:
+socrate10 socrate10 socrate10 socrate10 socrate10 socrate10 socrate10 socrate10 socrate10 socrate10 socrate10 socrate10 socrate10 socrate10 socrate10 socrate10 socrate11 socrate11 socrate11 socrate11 socrate11 socrate11 socrate11 socrate11 socrate11 socrate11 socrate11 socrate11 socrate11 socrate11 socrate11 socrate11 socrate12 socrate12 socrate12 socrate12 socrate12 socrate12 socrate12 socrate12 socrate12 socrate12 socrate12 socrate12 socrate12 socrate12 socrate12 socrate12 socrate13 socrate13 socrate13 socrate13 socrate13 socrate13 socrate13 socrate13 socrate13 socrate13 socrate13 socrate13 socrate13 socrate13 socrate13 socrate13
+This job has allocated 64 nodes

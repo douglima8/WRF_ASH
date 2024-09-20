@@ -1,0 +1,5 @@
+running day  05
+./rolf1.sh: 42: ./rolf1.sh: 0: Permission denied
+ real-0 OK
+./rolf1.sh: 57: ./rolf1.sh: 0: Permission denied
+ convert OK

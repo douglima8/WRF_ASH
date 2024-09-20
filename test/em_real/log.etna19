@@ -1,0 +1,5 @@
+running day  13
+./etna_2019.sh: 42: ./etna_2019.sh: 0: not found
+ real-0 OK
+./etna_2019.sh: 58: ./etna_2019.sh: 2: not found
+ convert OK
