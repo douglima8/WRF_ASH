@@ -10,13 +10,13 @@ The WRF Model is open-source code in the public domain, and its use is unrestric
 
 
 
-### Changes made to the model for simulating volcanic ash ###
+### Changes Made To The Model For Simulating Volcanic Ash ###
 
 Changes were made to the file:
 
-´´´ Shell
+```Shell
 chem/emissions_driver.F
-´´´
+```
 
 Changes to emissions, both for plume height and for SO2 and AOD emissions, are with urix 2019 - 2021 demarcations. If you have any questions about changes or compilation, please contact the author via email: douglas.lima@acad.ufsm.br
 
