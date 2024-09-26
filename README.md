@@ -7,3 +7,16 @@ For an overview of the WRF modeling system, along with information regarding dow
 Information regarding WRF Model citations (including a DOI) can be found here: [https://www2.mmm.ucar.edu/wrf/users/citing_wrf.html](https://www2.mmm.ucar.edu/wrf/users/citing_wrf.html).
 
 The WRF Model is open-source code in the public domain, and its use is unrestricted. The name "WRF", however, is a registered trademark of the University Corporation for Atmospheric Research. The WRF public domain notice and related information may be found here: [https://www2.mmm.ucar.edu/wrf/users/public.html](https://www2.mmm.ucar.edu/wrf/users/public.html).
+
+
+
+### Changes made to the model for simulating volcanic ash ###
+
+Changes were made to the file:
+
+´´´ Shell
+chem/emissions_driver.F
+´´´
+
+Changes to emissions, both for plume height and for SO2 and AOD emissions, are with urix 2019 - 2021 demarcations. If you have any questions about changes or compilation, please contact the author via email: douglas.lima@acad.ufsm.br
+
